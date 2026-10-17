@@ -125,8 +125,9 @@ def main():
                 f"{interaction.user.mention} asked: *\"{question}\"*\n\n{flair_reply}"
             )
         except Exception as e:
-            await interaction.followup.send("Oh noes! Something went wrong... >_<")
-            print(f"Error generating response: {e}")
+    await interaction.followup.send("Oh noes! Something went wrong... >_<")
+    print(f"Error generating response: {e}")
+    print(type(e).__name__)
 
     @bot.event
     async def on_message(message):
