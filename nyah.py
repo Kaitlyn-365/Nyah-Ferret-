@@ -157,8 +157,8 @@ def main():
                     flair_reply = apply_furry_flair(reply_text)
                     await message.reply(flair_reply)
                 except Exception as e:
-                    await message.reply("Oh noes! Something went wrong... >_<")
-                    print(f"Error generating response: {e}")
+            await interaction.followup.send("Oh noes! Something went wrong... >_<")
+            print(f"Error generating response: {e}")
 
         await bot.process_commands(message)
 
