@@ -75,16 +75,14 @@ def apply_furry_flair(text: str) -> str:
 
 
 def main():
-    # Start keep-alive thread
-    threading.Thread(target=run_keep_alive, daemon=True).start()
-
     # Configure Gemini client
     client = genai.Client(api_key=GEMINI_API_KEY)
 
+    for m in client.models.list():
+        print(m.name)
+
     # Discord Bot Setup
     intents = discord.Intents.default()
-    if USE_PRIVILEGED_INTENTS:
-        intents.message_content = True
 
     bot = commands.Bot(command_prefix="!", intents=intents)
 
