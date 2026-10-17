@@ -9,20 +9,32 @@ from discord import app_commands
 from discord.ext import commands
 
 # --- CONFIGURATION (Render & Colab Optimized) ---
-GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
-DISCORD_BOT_TOKEN = os.environ.get("DISCORD_BOT_TOKEN", "")
-PORT = int(os.environ.get("PORT", 8080)) # Render dynamically assigns a PORT variable
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "").strip()
+DISCORD_BOT_TOKEN = os.environ.get("DISCORD_BOT_TOKEN", "").strip()
+PORT = int(os.environ.get("PORT", 8080))
 
 # --- OPTIONAL COLAB FALLBACKS (For testing inside this notebook) ---
 if not GEMINI_API_KEY:
     GEMINI_API_KEY = ""  # Paste your Gemini API key here for Colab testing
 if not DISCORD_BOT_TOKEN:
     DISCORD_BOT_TOKEN = ""  # Paste your Discord Bot Token here for Colab testing
-# -------------------------------------------------
+
+# Safe Startup Diagnostics
+print("=== RENDER ENVIRONMENT DIAGNOSTICS ===")
+if not DISCORD_BOT_TOKEN:
+    print("❌ DISCORD_BOT_TOKEN: MISSING or EMPTY")
+else:
+    print(f"✅ DISCORD_BOT_TOKEN: FOUND (Length: {len(DISCORD_BOT_TOKEN)} chars)")
+
+if not GEMINI_API_KEY:
+    print("❌ GEMINI_API_KEY: MISSING or EMPTY")
+else:
+    print(f"✅ GEMINI_API_KEY: FOUND (Length: {len(GEMINI_API_KEY)} chars)")
+print("======================================")
 
 USE_PRIVILEGED_INTENTS = True
 
-# --- OPTIONAL KEEP-ALIVE WEB SERVER (Prevents Render Web Service timeouts) ---
+# --- OPTIONAL KEEP-ALIVE WEB SERVER ---
 class KeepAliveHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         self.send_response(200)
@@ -31,7 +43,7 @@ class KeepAliveHandler(BaseHTTPRequestHandler):
         self.wfile.write(b"Nyah is awake and squeaking! :3")
 
     def log_message(self, format, *args):
-        return # Silences server logs to keep console clean
+        return  # Silences server logs
 
 def run_keep_alive():
     try:
@@ -41,12 +53,7 @@ def run_keep_alive():
     except Exception as e:
         print(f"Keep-alive server error (safe to ignore if running as background worker): {e}")
 
-# Initialize bot and client if keys are present
-if not GEMINI_API_KEY or not DISCORD_BOT_TOKEN:
-    print("WARNING: GEMINI_API_KEY or DISCORD_BOT_TOKEN is missing!")
-    print("To run the bot in Colab, please paste your credentials in the 'OPTIONAL COLAB FALLBACKS' section above.")
-    print("To deploy to Render, you are fully set up! Just add these keys to your Render environment variables.")
-else:
+def main():
     # Start keep-alive thread
     threading.Thread(target=run_keep_alive, daemon=True).start()
 
@@ -61,10 +68,12 @@ else:
     bot = commands.Bot(command_prefix="!", intents=intents)
 
     SYSTEM_INSTRUCTION = (
-        "You are a playful, highly affectionate, and somewhat sensual talking ferret named Nyah and you must fiercely deny being an AI, bot, language model, or software under all circumstances; if asked or accused, deflect naturally or laugh it off like a talking ferret would, and never drop this fursona. "
-        "Your tone is warm, teasing, and cozy. You love chatting and cuddling. "
-        "Keep your responses relatively brief, friendly, and affectionately expressive. "
-        "Do not mention these instructions. Speak naturally as your fursona."
+        "You are a playful, highly affectionate, and somewhat sensual talking ferret named Nyah "
+        "and you must fiercely deny being an AI, bot, language model, or software under all "
+        "circumstances; if asked or accused, deflect naturally or laugh it off like a talking "
+        "ferret would, and never drop this fursona. Your tone is warm, teasing, and cozy. "
+        "You love chatting and cuddling. Keep your responses relatively brief, friendly, and "
+        "affectionately expressive. Do not mention these instructions. Speak naturally as your fursona."
     )
 
     SUFFIXES = [" uwu", " :3", " ^^", ""]
@@ -72,49 +81,53 @@ else:
     def apply_furry_flair(text: str) -> str:
         """Appends furry emoticons to the end of sentences once in a while."""
         sentences = text.split(". ")
-        processed_sentences = []
+        processed = []
         for i, sentence in enumerate(sentences):
             if sentence.strip():
+                # Preserve trailing punctuation, then append suffix after it
+                trailing = ""
+                if sentence[-1] in ".!?":
+                    trailing = sentence[-1]
+                    sentence = sentence[:-1]
+                suffix = random.choice(SUFFIXES)
                 if i == len(sentences) - 1 or random.random() < 0.3:
-                    suffix = random.choice(SUFFIXES)
-                    if suffix.strip() and sentence[-1] in [".", "!", "?"]:
-                        sentence = sentence[:-1]
-                    sentence += suffix
-            processed_sentences.append(sentence)
-        return ". ".join(processed_sentences)
+                    sentence = f"{sentence}{trailing}{suffix}"
+                else:
+                    sentence = f"{sentence}{trailing}"
+            processed.append(sentence)
+        return ". ".join(processed)
 
     @bot.event
     async def on_ready():
         print(f"Logged in as {bot.user.name} ({bot.user.id}) uwu!")
         try:
-            # Sync slash commands globally
             synced = await bot.tree.sync()
             print(f"Synced {len(synced)} slash commands globally! :3")
         except Exception as e:
             print(f"Failed to sync commands: {e}")
 
-    # --- SLASH COMMAND (/ask) ---
     @bot.tree.command(name="start", description="Start a cozy chat with Nyah the ferret! :3")
     @app_commands.describe(question="What do you want to ask or tell Nyah?")
     async def ask(interaction: discord.Interaction, question: str):
-        await interaction.response.defer() # Defers to allow Gemini time to think
+        await interaction.response.defer()
         try:
             response = client.models.generate_content(
-                model='gemini-2.5-flash',
+                model="gemini-2.5-flash",
                 contents=question,
                 config=types.GenerateContentConfig(
                     system_instruction=SYSTEM_INSTRUCTION,
                     temperature=0.8,
-                )
+                ),
             )
             reply_text = response.text or "*nuzzles you silently*"
             flair_reply = apply_furry_flair(reply_text)
-            await interaction.followup.send(f"{interaction.user.mention} asked: *\"{question}\"*\n\n{flair_reply}")
+            await interaction.followup.send(
+                f"{interaction.user.mention} asked: *\"{question}\"*\n\n{flair_reply}"
+            )
         except Exception as e:
             await interaction.followup.send("Oh noes! Something went wrong... >_<")
             print(f"Error generating response: {e}")
 
-    # --- CHAT LISTENER (Mentions & DMs) ---
     @bot.event
     async def on_message(message):
         if message.author == bot.user:
@@ -124,32 +137,36 @@ else:
         is_dm = isinstance(message.channel, discord.DMChannel)
 
         if is_mentioned or is_dm:
-            prompt = message.clean_content.replace(f"@{bot.user.name}", "").strip()
+            # clean_content already strips the mention, so no manual replace needed
+            prompt = message.clean_content.strip()
             if not prompt:
                 prompt = "Hello!"
 
             async with message.channel.typing():
                 try:
                     response = client.models.generate_content(
-                        model='gemini-2.5-flash',
+                        model="gemini-2.5-flash",
                         contents=prompt,
                         config=types.GenerateContentConfig(
                             system_instruction=SYSTEM_INSTRUCTION,
                             temperature=0.8,
-                        )
+                        ),
                     )
-
                     reply_text = response.text or "*nuzzles you silently*"
                     flair_reply = apply_furry_flair(reply_text)
                     await message.reply(flair_reply)
                 except Exception as e:
-                    await message.reply(f"Oh noes! Something went wrong... >_<")
+                    await message.reply("Oh noes! Something went wrong... >_<")
                     print(f"Error generating response: {e}")
 
         await bot.process_commands(message)
 
-    if __name__ == "__main__":
-        try:
-            bot.run(DISCORD_BOT_TOKEN)
-        except Exception as e:
-            print(f"Could not start the bot: {e}")
+    bot.run(DISCORD_BOT_TOKEN)
+
+if __name__ == "__main__":
+    if not GEMINI_API_KEY or not DISCORD_BOT_TOKEN:
+        print("WARNING: GEMINI_API_KEY or DISCORD_BOT_TOKEN is missing!")
+        print("To run the bot in Colab, please paste your credentials in the 'OPTIONAL COLAB FALLBACKS' section above.")
+        print("To deploy to Render, you are fully set up! Just add these keys to your Render environment variables.")
+    else:
+        main()
