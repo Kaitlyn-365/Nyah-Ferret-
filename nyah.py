@@ -11,7 +11,7 @@ from discord.ext import commands
 # --- CONFIGURATION (Render & Colab Optimized) ---
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "").strip()
 DISCORD_BOT_TOKEN = os.environ.get("DISCORD_BOT_TOKEN", "").strip()
-PORT = int(os.environ.get("PORT", 8080))
+PORT = int(os.environ.get("PORT", 8080))  # Render dynamically assigns a PORT variable
 
 # --- OPTIONAL COLAB FALLBACKS (For testing inside this notebook) ---
 if not GEMINI_API_KEY:
@@ -22,7 +22,7 @@ if not DISCORD_BOT_TOKEN:
 # Safe Startup Diagnostics
 print("=== RENDER ENVIRONMENT DIAGNOSTICS ===")
 if not DISCORD_BOT_TOKEN:
-    print("❌ DISCORD_BOT_TOKEN: MISSING or EMPTY")
+    print("❌ DISCORD_BOT_TOKEN: MISSING or EMPTY (This is why you get 'Improper token')")
 else:
     print(f"✅ DISCORD_BOT_TOKEN: FOUND (Length: {len(DISCORD_BOT_TOKEN)} chars)")
 
@@ -34,7 +34,7 @@ print("======================================")
 
 USE_PRIVILEGED_INTENTS = True
 
-# --- OPTIONAL KEEP-ALIVE WEB SERVER ---
+# --- OPTIONAL KEEP-ALIVE WEB SERVER (Prevents Render Web Service timeouts) ---
 class KeepAliveHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         self.send_response(200)
@@ -43,7 +43,8 @@ class KeepAliveHandler(BaseHTTPRequestHandler):
         self.wfile.write(b"Nyah is awake and squeaking! :3")
 
     def log_message(self, format, *args):
-        return  # Silences server logs
+        return  # Silences server logs to keep console clean
+
 
 def run_keep_alive():
     try:
@@ -52,6 +53,26 @@ def run_keep_alive():
         server.serve_forever()
     except Exception as e:
         print(f"Keep-alive server error (safe to ignore if running as background worker): {e}")
+
+
+def apply_furry_flair(text: str) -> str:
+    """Appends furry emoticons to the end of sentences once in a while, keeping punctuation."""
+    sentences = text.split(". ")
+    processed = []
+    for i, sentence in enumerate(sentences):
+        if sentence.strip():
+            trailing = ""
+            if sentence[-1] in ".!?":
+                trailing = sentence[-1]
+                sentence = sentence[:-1]
+            suffix = random.choice(SUFFIXES)
+            if i == len(sentences) - 1 or random.random() < 0.3:
+                sentence = f"{sentence}{trailing}{suffix}"
+            else:
+                sentence = f"{sentence}{trailing}"
+        processed.append(sentence)
+    return ". ".join(processed)
+
 
 def main():
     # Start keep-alive thread
@@ -76,27 +97,6 @@ def main():
         "affectionately expressive. Do not mention these instructions. Speak naturally as your fursona."
     )
 
-    SUFFIXES = [" uwu", " :3", " ^^", ""]
-
-    def apply_furry_flair(text: str) -> str:
-        """Appends furry emoticons to the end of sentences once in a while."""
-        sentences = text.split(". ")
-        processed = []
-        for i, sentence in enumerate(sentences):
-            if sentence.strip():
-                # Preserve trailing punctuation, then append suffix after it
-                trailing = ""
-                if sentence[-1] in ".!?":
-                    trailing = sentence[-1]
-                    sentence = sentence[:-1]
-                suffix = random.choice(SUFFIXES)
-                if i == len(sentences) - 1 or random.random() < 0.3:
-                    sentence = f"{sentence}{trailing}{suffix}"
-                else:
-                    sentence = f"{sentence}{trailing}"
-            processed.append(sentence)
-        return ". ".join(processed)
-
     @bot.event
     async def on_ready():
         print(f"Logged in as {bot.user.name} ({bot.user.id}) uwu!")
@@ -106,10 +106,11 @@ def main():
         except Exception as e:
             print(f"Failed to sync commands: {e}")
 
+    # --- SLASH COMMAND (/start) ---
     @bot.tree.command(name="start", description="Start a cozy chat with Nyah the ferret! :3")
     @app_commands.describe(question="What do you want to ask or tell Nyah?")
     async def ask(interaction: discord.Interaction, question: str):
-        await interaction.response.defer()
+        await interaction.response.defer()  # Defers to allow Gemini time to think
         try:
             response = client.models.generate_content(
                 model="gemini-2.5-flash",
@@ -125,10 +126,10 @@ def main():
                 f"{interaction.user.mention} asked: *\"{question}\"*\n\n{flair_reply}"
             )
         except Exception as e:
-    await interaction.followup.send("Oh noes! Something went wrong... >_<")
-    print(f"Error generating response: {e}")
-    print(type(e).__name__)
+            await interaction.followup.send("Oh noes! Something went wrong... >_<")
+            print(f"Error generating response: {e}")
 
+    # --- CHAT LISTENER (Mentions & DMs) ---
     @bot.event
     async def on_message(message):
         if message.author == bot.user:
@@ -157,12 +158,13 @@ def main():
                     flair_reply = apply_furry_flair(reply_text)
                     await message.reply(flair_reply)
                 except Exception as e:
-            await interaction.followup.send("Oh noes! Something went wrong... >_<")
-            print(f"Error generating response: {e}")
+                    await message.reply("Oh noes! Something went wrong... >_<")
+                    print(f"Error generating response: {e}")
 
         await bot.process_commands(message)
 
     bot.run(DISCORD_BOT_TOKEN)
+
 
 if __name__ == "__main__":
     if not GEMINI_API_KEY or not DISCORD_BOT_TOKEN:
